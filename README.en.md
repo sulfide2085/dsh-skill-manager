@@ -21,7 +21,7 @@ Featured in the GitHub [`dsh-plugin`](https://github.com/topics/dsh-plugin) topi
 - **GitHub skill search**: add a repository (owner / name / branch; branch is optional and falls back to main→master), then search skills across all added repositories by keyword and install them individually; a separate search box filters locally installed skills.
 - **Refresh after install**: the list refreshes automatically after ZIP / repo installs, with a manual refresh button next to the title; click a card to expand the full skill content.
 
-![Skill manager UI](docs/screenshots/skill-manager.png)
+![Skill manager UI](docs/screenshots/skill-manager-v2.png)
 
 ## File layout
 
