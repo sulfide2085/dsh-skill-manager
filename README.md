@@ -4,7 +4,7 @@
 
 > 在 DSH 设置页里统一管理 DSH / Codex / Claude 的全部 AI 技能——热开关启停、GitHub 技能市场一键发现安装、本地 ZIP 即装即用，装完立刻被 /技能 与模型看见。
 
-![DSH 技能管理界面](docs/screenshots/skill-manager.png)
+![GitHub 技能市场](docs/screenshots/skill-market.png)
 
 ## 这是什么
 
@@ -20,7 +20,7 @@ DSH（DeepSeek Harness）的技能管理插件。技能文件散落在各处：D
 - **ZIP 安装**：选择本地 `.zip`（≤64 MiB），解压后自动查找包内的技能（SKILL.md 目录束或平铺 `.md`），查重后装入 `~/.dsh/skills` 并启用；包内没有技能时报错。
 - **GitHub 技能搜索**：添加仓库（owner / name / 分支，分支可留空，默认 main→master 回退），输入关键词跨所有已添加仓库搜索技能，命中可逐个安装；本地列表另有独立搜索框，过滤已安装技能。
 
-  ![GitHub 技能市场](docs/screenshots/skill-market.png)
+  ![DSH 技能管理界面](docs/screenshots/skill-manager.png)
 - **安装即刷新**：ZIP / 仓库安装成功后列表自动刷新，标题旁另有手动刷新按钮；点击卡片可展开查看技能全文。
 
 ## 文件结构
