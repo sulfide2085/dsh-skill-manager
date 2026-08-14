@@ -5,11 +5,17 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
 
 ## 功能
 
-- **全部技能列表**：合并注册表（启用）与磁盘（停用）条目，展示名称、描述、来源
-  （project-dsh / project-agents / user-dsh / user-agents / bundled / runtime）、
+- **全部技能列表**：合并注册表（启用）与磁盘（停用）条目，展示名称、描述、来源、
   调用策略徽章（模型+用户 / 仅模型 / 仅用户 / 已禁用调用）；
-- **热开关**：切换即重命名 `SKILL.md` ↔ `SKILL.md.disabled`，filesystem provider 的
-  watcher 在 ~200ms 内感知，模型技能目录立即更新，无需重启；
+- **第三方技能目录**：自动识别常见 CLI 的技能目录并纳入管理——
+  Codex（`~/.codex/skills` 与项目 `.codex/skills`，`CODEX_HOME` 可覆盖）与
+  Claude（`~/.claude/skills` 与项目 `.claude/skills`，`CLAUDE_CONFIG_DIR` 可覆盖），
+  同名技能按目录各自展示、互不遮蔽；
+- **热开关（单个）**：切换即重命名 `SKILL.md` ↔ `SKILL.md.disabled`，filesystem provider
+  的 watcher 在 ~200ms 内感知，模型技能目录立即更新，无需重启；停用后的技能对
+  Codex / Claude 同样生效（它们只认 `SKILL.md`）；
+- **目录级一键启停**：按来源分组（本地 / 项目 / Codex / Claude …），组头开关一次
+  启停该目录下的全部技能；
 - **正文预览**：点击卡片展开查看技能完整内容；
 - **搜索**：按名称/描述过滤。
 

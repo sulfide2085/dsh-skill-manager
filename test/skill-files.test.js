@@ -119,18 +119,22 @@ describe("buildRoots", () => {
     await mkdir(join(project, ".git"));
     const userDsh = join(dir, "u", ".dsh");
     const userAgents = join(dir, "u", ".agents");
-    const roots = await buildRoots(project, { dshHome: userDsh, agentsHome: userAgents });
+    const roots = await buildRoots(project, { dshHome: userDsh, agentsHome: userAgents, codexHome: join(dir, "u", ".codex"), claudeHome: join(dir, "u", ".claude") });
     assert.deepEqual(
       roots.map((root) => root.source),
-      ["project-dsh", "project-agents", "user-dsh", "user-agents"]
+      ["project-dsh", "project-agents", "codex-project", "claude-project", "user-dsh", "user-agents", "codex-user", "claude-user"]
     );
     assert.deepEqual(
       roots.map((root) => root.path),
       [
         join(project, ".dsh", "skills"),
         join(project, ".agents", "skills"),
+        join(project, ".codex", "skills"),
+        join(project, ".claude", "skills"),
         join(userDsh, "skills"),
-        join(userAgents, "skills")
+        join(userAgents, "skills"),
+        join(dir, "u", ".codex", "skills"),
+        join(dir, "u", ".claude", "skills")
       ]
     );
   });
@@ -139,11 +143,13 @@ describe("buildRoots", () => {
     const dir = await tempDir();
     const roots = await buildRoots(undefined, {
       dshHome: join(dir, "u", ".dsh"),
-      agentsHome: join(dir, "u", ".agents")
+      agentsHome: join(dir, "u", ".agents"),
+      codexHome: join(dir, "u", ".codex"),
+      claudeHome: join(dir, "u", ".claude")
     });
     assert.deepEqual(
       roots.map((root) => root.source),
-      ["user-dsh", "user-agents"]
+      ["user-dsh", "user-agents", "codex-user", "claude-user"]
     );
   });
 
@@ -152,7 +158,12 @@ describe("buildRoots", () => {
     const project = join(dir, "repo");
     await mkdir(join(project, ".git"), { recursive: true });
     // 用户 .dsh 恰好是项目内的 .dsh，则 project-dsh 与 user-dsh 相同
-    const roots = await buildRoots(project, { dshHome: join(project, ".dsh") });
+    const roots = await buildRoots(project, { dshHome: join(project, ".dsh"), codexHome: join(project, ".codex") });
+    const projectCodex = roots.filter((root) => root.source === "codex-project");
+    const userCodex = roots.filter((root) => root.source === "codex-user");
+    assert.equal(projectCodex.length, 1);
+    assert.equal(userCodex.length, 0);
+    assert.equal(projectCodex[0].path, join(project, ".codex", "skills"));
     const projectDsh = roots.filter((root) => root.source === "project-dsh");
     const userDsh = roots.filter((root) => root.source === "user-dsh");
     assert.equal(projectDsh.length, 1);

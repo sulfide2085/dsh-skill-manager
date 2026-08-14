@@ -28,7 +28,9 @@ function skillRaw(name, description, body) {
  * extra 用于注入不走磁盘的技能（runtime / bundled）。
  */
 function makeRegistry({ roots, extra = [] }) {
-  const activeFor = (cwd) => (cwd === undefined ? roots.filter((root) => root.source.startsWith("user-")) : roots);
+  // 真实 filesystem 提供方只覆盖 DSH/agents 官方根，不扫描 codex/claude 目录
+  const managedRoots = roots.filter((root) => root.source.startsWith("user-") || root.source.startsWith("project-"));
+  const activeFor = (cwd) => (cwd === undefined ? managedRoots.filter((root) => root.source.startsWith("user-")) : managedRoots);
   const scanLive = async (cwd) => {
     const live = [];
     const seen = new Set();
@@ -103,9 +105,14 @@ beforeEach(async () => {
   process.env.DSH_HOME = join(homeRoot, ".dsh");
   process.env.DSH_AGENTS_HOME = join(homeRoot, ".agents");
 
+  process.env.CODEX_HOME = join(homeRoot, "codex");
+  process.env.CLAUDE_CONFIG_DIR = join(homeRoot, "claude");
+
   const roots = await buildRoots(projectRoot, {
     dshHome: process.env.DSH_HOME,
-    agentsHome: process.env.DSH_AGENTS_HOME
+    agentsHome: process.env.DSH_AGENTS_HOME,
+    codexHome: process.env.CODEX_HOME,
+    claudeHome: process.env.CLAUDE_CONFIG_DIR
   });
   registry = makeRegistry({
     roots,
@@ -143,6 +150,8 @@ beforeEach(async () => {
 afterEach(async () => {
   delete process.env.DSH_HOME;
   delete process.env.DSH_AGENTS_HOME;
+  delete process.env.CODEX_HOME;
+  delete process.env.CLAUDE_CONFIG_DIR;
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -155,7 +164,7 @@ describe("插件注册", () => {
     assert.equal(typeof apply, "function");
   });
 
-  test("typert manifest 包含 3 个远程调用", () => {
+  test("typert manifest 包含 4 个远程调用", () => {
     const manifest = ctx.manifest();
     assert.equal(manifest.package, "dsh-skill-manager");
     assert.equal(manifest.face, "host");
@@ -163,7 +172,8 @@ describe("插件注册", () => {
     assert.deepEqual(ids, [
       "dsh-skill-manager#skillManager/list",
       "dsh-skill-manager#skillManager/content",
-      "dsh-skill-manager#skillManager/setEnabled"
+      "dsh-skill-manager#skillManager/setEnabled",
+      "dsh-skill-manager#skillManager/setSourceEnabled"
     ]);
   });
 });
@@ -274,6 +284,123 @@ describe("skillManager.list", () => {
     const { skills } = await gateway.list("s1");
     assert.equal(skills.filter((skill) => skill.name === "skill-a").length, 1);
     assert.equal(skills.find((skill) => skill.name === "skill-a").enabled, true);
+  });
+});
+
+// ── 第三方目录（codex / claude） ────────────────────────────────────────
+
+describe("第三方技能目录（codex / claude）", () => {
+  test("识别并展示 codex/claude 用户目录技能（非回退视图也展示启用条目）", async () => {
+    const codexRoot = join(homeRoot, "codex", "skills");
+    const claudeRoot = join(homeRoot, "claude", "skills");
+    await mkdir(join(codexRoot, "cx-a"), { recursive: true });
+    await writeFile(join(codexRoot, "cx-a", "SKILL.md"), skillRaw("cx-a", "Codex 技能 A", "正文"));
+    await mkdir(join(claudeRoot, "cl-a"), { recursive: true });
+    await writeFile(join(claudeRoot, "cl-a", "SKILL.md"), skillRaw("cl-a", "Claude 技能 A", "正文"));
+
+    // 有会话（非回退）：注册表不包含第三方条目，但它们必须照常展示
+    const { skills } = await gateway.list("s1");
+    const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
+    assert.equal(byName["cx-a"].source, "codex-user");
+    assert.equal(byName["cx-a"].enabled, true);
+    assert.equal(byName["cl-a"].source, "claude-user");
+    assert.equal(byName["cl-a"].enabled, true);
+  });
+
+  test("项目级 .codex/skills 与 .claude/skills 也识别", async () => {
+    await mkdir(join(projectRoot, ".codex", "skills", "cx-p"), { recursive: true });
+    await writeFile(join(projectRoot, ".codex", "skills", "cx-p", "SKILL.md"), skillRaw("cx-p", "项目 Codex", "正文"));
+    await mkdir(join(projectRoot, ".claude", "skills", "cl-p"), { recursive: true });
+    await writeFile(join(projectRoot, ".claude", "skills", "cl-p", "SKILL.md"), skillRaw("cl-p", "项目 Claude", "正文"));
+
+    const { skills } = await gateway.list("s1");
+    const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
+    assert.equal(byName["cx-p"].source, "codex-project");
+    assert.equal(byName["cl-p"].source, "claude-project");
+    assert.equal(byName["cx-p"].enabled, true);
+  });
+
+  test("目录级一键停用/启用（setSourceEnabled）", async () => {
+    const codexRoot = join(homeRoot, "codex", "skills");
+    await mkdir(join(codexRoot, "cx-a"), { recursive: true });
+    await writeFile(join(codexRoot, "cx-a", "SKILL.md"), skillRaw("cx-a", "Codex A", "正文"));
+    await mkdir(join(codexRoot, "cx-b"), { recursive: true });
+    await writeFile(join(codexRoot, "cx-b", "SKILL.md"), skillRaw("cx-b", "Codex B", "正文"));
+    // 已停用的不参与本次变更
+    await mkdir(join(codexRoot, "cx-c"), { recursive: true });
+    await writeFile(join(codexRoot, "cx-c", "SKILL.md" + DISABLED_SUFFIX), skillRaw("cx-c", "Codex C", "正文"));
+
+    // 一键停用：两个启用条目被改名，已停用的跳过
+    const off = await gateway.setSourceEnabled("codex-user", "s1", false);
+    assert.deepEqual(off, { source: "codex-user", enabled: false, toggled: 2 });
+    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md")), false);
+    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md.disabled")), true);
+    assert.equal(await pathExists(join(codexRoot, "cx-b", "SKILL.md.disabled")), true);
+    assert.equal(await pathExists(join(codexRoot, "cx-c", "SKILL.md.disabled")), true, "已停用的保持原状");
+
+    // list 立即反映：全部停用
+    let { skills } = await gateway.list("s1");
+    assert.deepEqual(
+      skills.filter((skill) => skill.source === "codex-user").map((skill) => skill.enabled),
+      [false, false, false]
+    );
+
+    // 幂等：再停一次 → toggled 0
+    const again = await gateway.setSourceEnabled("codex-user", "s1", false);
+    assert.deepEqual(again, { source: "codex-user", enabled: false, toggled: 0 });
+
+    // 一键启用：三个全部恢复
+    const on = await gateway.setSourceEnabled("codex-user", "s1", true);
+    assert.deepEqual(on, { source: "codex-user", enabled: true, toggled: 3 });
+    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md")), true);
+    assert.equal(await pathExists(join(codexRoot, "cx-b", "SKILL.md")), true);
+    assert.equal(await pathExists(join(codexRoot, "cx-c", "SKILL.md")), true);
+
+    ({ skills } = await gateway.list("s1"));
+    assert.deepEqual(
+      skills.filter((skill) => skill.source === "codex-user").map((skill) => skill.enabled),
+      [true, true, true]
+    );
+  });
+
+  test("目录级启停不触碰其他来源", async () => {
+    await mkdir(join(homeRoot, "codex", "skills", "cx-a"), { recursive: true });
+    await writeFile(join(homeRoot, "codex", "skills", "cx-a", "SKILL.md"), skillRaw("cx-a", "Codex A", "正文"));
+    await gateway.setSourceEnabled("codex-user", "s1", false);
+    // 用户 dsh 技能不受影响
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md")), true);
+    const { skills } = await gateway.list("s1");
+    assert.equal(skills.find((skill) => skill.name === "skill-u").enabled, true);
+  });
+
+  test("不存在的来源目录返回 toggled 0", async () => {
+    const result = await gateway.setSourceEnabled("claude-user", "s1", false);
+    assert.deepEqual(result, { source: "claude-user", enabled: false, toggled: 0 });
+  });
+
+  test("同名技能在不同来源目录各自展示、互不遮蔽", async () => {
+    const codexRoot = join(homeRoot, "codex", "skills");
+    const claudeRoot = join(homeRoot, "claude", "skills");
+    await mkdir(join(codexRoot, "agents-sdk"), { recursive: true });
+    await writeFile(join(codexRoot, "agents-sdk", "SKILL.md"), skillRaw("agents-sdk", "Codex 版", "正文"));
+    await mkdir(join(claudeRoot, "agents-sdk"), { recursive: true });
+    await writeFile(join(claudeRoot, "agents-sdk", "SKILL.md"), skillRaw("agents-sdk", "Claude 版", "正文"));
+
+    const { skills } = await gateway.list("s1");
+    const matches = skills.filter((skill) => skill.name === "agents-sdk");
+    assert.equal(matches.length, 2);
+    assert.deepEqual(matches.map((skill) => skill.source).sort(), ["claude-user", "codex-user"]);
+
+    // 带 source 启停：只影响指定目录的文件
+    await gateway.setEnabled("agents-sdk", "s1", false, "claude-user");
+    assert.equal(await pathExists(join(claudeRoot, "agents-sdk", "SKILL.md")), false);
+    assert.equal(await pathExists(join(claudeRoot, "agents-sdk", "SKILL.md.disabled")), true);
+    assert.equal(await pathExists(join(codexRoot, "agents-sdk", "SKILL.md")), true, "codex 的不受影响");
+
+    // list 反映：claude 停用、codex 仍启用
+    const after = (await gateway.list("s1")).skills.filter((skill) => skill.name === "agents-sdk");
+    assert.equal(after.find((skill) => skill.source === "claude-user").enabled, false);
+    assert.equal(after.find((skill) => skill.source === "codex-user").enabled, true);
   });
 });
 

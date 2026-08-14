@@ -101,14 +101,14 @@ describe("client apply", () => {
     assert.equal(ctx.calls.register.dicts.en.nav, "Skill Manager");
   });
 
-  test("挂载远程贡献清单（3 个描述符）", () => {
+  test("挂载远程贡献清单（4 个描述符）", () => {
     const ctx = makeCtx(makeRemoteStub());
     mod.apply(ctx);
     const descriptors = ctx.calls.mount.descriptors;
-    assert.equal(descriptors.length, 3);
+    assert.equal(descriptors.length, 4);
     assert.deepEqual(
       descriptors.map((descriptor) => descriptor.method),
-      ["list", "content", "setEnabled"]
+      ["list", "content", "setEnabled", "setSourceEnabled"]
     );
   });
 
@@ -159,6 +159,14 @@ describe("client apply", () => {
     assert.equal(result.skills[0].name, "demo-skill");
   });
 
+  test("face.setSourceEnabled 按来源传递参数并返回 toggled", async () => {
+    const ctx = makeCtx(makeRemoteStub());
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const result = await face.setSourceEnabled("codex-user", false);
+    assert.equal(result.toggled, 2);
+  });
+
   test("face.setSkillEnabled 传递启用参数", async () => {
     const remoteStub = makeRemoteStub();
     const ctx = makeCtx(remoteStub);
@@ -193,6 +201,10 @@ function makeRemoteStub() {
     async setEnabled(name, sessionId, enabled) {
       this.setEnabledArgs = [name, sessionId, enabled];
       return { ok: true, value: { name, enabled } };
+    },
+    async setSourceEnabled(source, sessionId, enabled) {
+      this.setSourceEnabledArgs = [source, sessionId, enabled];
+      return { ok: true, value: { source, enabled, toggled: 2 } };
     }
   };
 }
