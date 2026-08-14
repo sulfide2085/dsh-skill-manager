@@ -103,6 +103,8 @@ describe("client apply", () => {
     assert.equal(ctx.calls.register.dicts.zh.disabled, "已停用");
     assert.equal(ctx.calls.register.dicts.en.disabled, "Disabled");
     assert.equal(ctx.calls.register.dicts.zh.github, "GitHub");
+    assert.equal(ctx.calls.register.dicts.zh.localSearch, "搜索本地技能");
+    assert.equal(ctx.calls.register.dicts.en.marketSearch, "Search skills in GitHub repos");
   });
 
   test("挂载远程贡献清单（10 个描述符）", () => {
