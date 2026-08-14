@@ -104,6 +104,7 @@ describe("client apply", () => {
     assert.equal(ctx.calls.register.dicts.en.disabled, "Disabled");
     assert.equal(ctx.calls.register.dicts.zh.github, "GitHub");
     assert.equal(ctx.calls.register.dicts.zh.localSearch, "搜索本地技能");
+    assert.equal(ctx.calls.register.dicts.zh.refresh, "刷新");
     assert.equal(ctx.calls.register.dicts.en.marketSearch, "Search skills in GitHub repos");
   });
 
