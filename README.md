@@ -1,8 +1,8 @@
-# dsh-skill-manager
+# dsh-skill-manager · DSH 技能管理插件
+
+[English](README.en.md) · 中文
 
 > 在 DSH 设置页里统一管理 DSH / Codex / Claude 的全部 AI 技能——热开关启停、GitHub 技能市场一键发现安装、本地 ZIP 即装即用，装完立刻被 /技能 与模型看见。
->
-> One panel to manage every skill across DSH, Codex and Claude — hot-toggle, discover & install from GitHub skill marketplaces, or import from a local ZIP, all live without restart.
 
 ## 这是什么
 
