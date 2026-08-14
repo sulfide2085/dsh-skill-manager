@@ -101,14 +101,14 @@ describe("client apply", () => {
     assert.equal(ctx.calls.register.dicts.en.nav, "Skill Manager");
   });
 
-  test("挂载远程贡献清单（4 个描述符）", () => {
+  test("挂载远程贡献清单（10 个描述符）", () => {
     const ctx = makeCtx(makeRemoteStub());
     mod.apply(ctx);
     const descriptors = ctx.calls.mount.descriptors;
-    assert.equal(descriptors.length, 4);
+    assert.equal(descriptors.length, 10);
     assert.deepEqual(
       descriptors.map((descriptor) => descriptor.method),
-      ["list", "content", "setEnabled", "setSourceEnabled"]
+      ["list", "content", "setEnabled", "setSourceEnabled", "installZip", "listRepos", "addRepo", "removeRepo", "discoverRepo", "installFromRepo"]
     );
   });
 
@@ -133,7 +133,8 @@ describe("client apply", () => {
         { name: "demo-skill", description: "演示", source: "user-dsh", enabled: true, modelInvocable: true, userInvocable: true }
       ] } }),
       content: async () => ({ ok: true, value: { name: "demo-skill", description: "演示", content: "正文", provider: "filesystem" } }),
-      setEnabled: async () => ({ ok: true, value: { name: "demo-skill", enabled: false } })
+      setEnabled: async () => ({ ok: true, value: { name: "demo-skill", enabled: false } }),
+      listRepos: async () => ({ ok: true, value: { repos: [] } })
     };
     const ctx = makeCtx(remoteStub);
     mod.apply(ctx);
@@ -147,6 +148,39 @@ describe("client apply", () => {
     assert.equal(typeof face.listSkills, "function");
     assert.equal(typeof face.loadContent, "function");
     assert.equal(typeof face.setSkillEnabled, "function");
+    assert.equal(typeof face.installZip, "function");
+    assert.equal(typeof face.listRepos, "function");
+    assert.equal(typeof face.discoverRepo, "function");
+    assert.equal(typeof face.installFromRepo, "function");
+  });
+
+  test("face.installZip 经 remote 桩往返调用（含数据与结果）", async () => {
+    const remoteStub = {
+      installZip: async (fileName, dataBase64) => ({
+        ok: true,
+        value: { installed: [{ name: "foo", description: "d", dirBundle: true, file: "C:\\x\\foo\\SKILL.md", source: "user-dsh" }], conflicts: [], skipped: [] }
+      })
+    };
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const result = await face.installZip("pack.zip", "UEsDBA==");
+    assert.equal(result.installed[0].name, "foo");
+  });
+
+  test("face.installFromRepo 经 remote 桩往返（安装结果含冲突标记）", async () => {
+    const remoteStub = {
+      installFromRepo: async (owner, name, branch, directory) => ({
+        ok: true,
+        value: { conflict: true, name: "foo" }
+      })
+    };
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const result = await face.installFromRepo("o", "r", "main", "skills/foo");
+    assert.equal(result.conflict, true);
+    assert.equal(result.name, "foo");
   });
 
   test("face.listSkills 经 remote 桩调用并返回结果", async () => {

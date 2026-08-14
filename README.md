@@ -21,7 +21,15 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
 - **目录级一键启停**：按来源分组（本地 / 项目 / Codex / Claude …），组头开关一次
   启停该目录下的全部技能；
 - **正文预览**：点击卡片展开查看技能完整内容；
-- **搜索**：按名称/描述过滤。
+- **搜索**：按名称/描述过滤；
+- **ZIP 安装**：选择本地 ZIP（≤64 MiB）→ 解压（store/deflate、CRC32 校验、
+  基础 zip-slip 条目过滤）→ 递归发现包内 SKILL.md 目录束与平铺 .md →
+  定名（目录名 → frontmatter name → ZIP 文件名）→ 查重后安装到用户
+  `.dsh/skills`（启用形态，watcher 自动发现）；无技能报 NO_SKILLS_IN_ZIP；
+- **GitHub 仓库发现**：添加/收藏仓库（owner/name/分支，分支默认 main→master
+  回退，坐标经字符白名单校验），下载归档（流式、128 MiB 上限、60s 超时）
+  后扫描仓库内技能（剥 GitHub 包装根目录），列表展示可安装技能并一键安装；
+  安装成功自动收藏仓库。
 
 ## 架构
 
@@ -29,9 +37,11 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
 
 | 文件 | 角色 |
 |---|---|
-| `lib/index.js` | host 半：`skillManager` Typert Remote 服务（list / content / setEnabled），注入 `typert`、`skills`、`sessions`、`agents` |
+| `lib/index.js` | host 半：`skillManager` Typert Remote 服务（list / content / setEnabled / installZip / 仓库接口），注入 `typert`、`skills`、`sessions`、`agents` |
 | `lib/skill-files.js` | 磁盘约定层（零依赖）：扫描根、frontmatter 解析、`.disabled` 启停 |
-| `lib/client.js` | 浏览器半：手写 bundle（`window.__ModuleLoader__.load`），注册 `settings.section` 分区（id: `skill-manager`，order: 17），经 `ctx.remote` 调 host |
+| `lib/skill-zip.js` | ZIP 安装核心（仅 node 内置）：解析/解压（store+deflate）、CRC32、条目名安全过滤、包内技能发现、定名/查重/落盘 |
+| `lib/skill-repo.js` | GitHub 仓库发现核心：坐标校验、分支回退下载、包装根剥除、可发现技能扫描、按目录安装 |
+| `lib/client.js` | 浏览器半：手写 bundle（`window.__ModuleLoader__.load`），注册 `settings.section` 分区（id: `skill-manager`，order: 17），含 ZIP 安装与仓库发现面板，经 `ctx.remote` 调 host |
 
 ### 依赖解析说明（Windows）
 
@@ -54,7 +64,7 @@ New-Item -ItemType Junction -Path "node_modules" -Target "C:\Users\<你>\AppData
 npm test
 ```
 
-覆盖范围（`test/`，共 44 个用例）：
+覆盖范围（`test/`，共 93 个用例）：
 
 - `skill-files.test.js`：frontmatter 解析、路径存在性、项目根锚点、管理根构建与去重、
   目录束/平铺/停用扫描、`.system` 跳过、同名胜出规则；
@@ -63,8 +73,13 @@ npm test
   三种定位、`setEnabled` 启停/拒绝 bundled 与 runtime/幂等，并核对真实文件
   重命名结果；
 - `client.test.js`：模拟浏览器环境（`window.__ModuleLoader__` + 桩 react）加载
-  手写 bundle，覆盖字典注册、远程贡献清单、设置分区注册与 face 方法的
-  往返调用（含错误路径）。
+  手写 bundle，覆盖字典注册、远程贡献清单（10 个描述符）、设置分区注册与
+  face 方法的往返调用（含错误路径）；
+- `skill-zip.test.js`：ZIP 解析/解压（store+deflate）、CRC 校验、zip-slip 条目
+  过滤、symlink 跳过、嵌套/根目录/平铺技能发现、定名回退、冲突跳过、
+  坏包与 NO_SKILLS_IN_ZIP、临时目录清理；
+- `skill-repo.test.js`：仓库坐标白名单校验、分支候选回退、本地 HTTP 服务下的
+  下载/超限/404、GitHub 包装根剥除、可发现技能去重排序、按目录/按名安装与冲突。
 
 ## 安装
 
