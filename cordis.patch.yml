@@ -1,0 +1,5 @@
+# dsh-skill-manager bundle patch.
+# 安装后由 dsh plugin 自动作为一层应用，无需手动编辑任何配置。
+- insert:
+    - id: skill-manager
+      name: dsh-skill-manager

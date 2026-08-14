@@ -1,0 +1,175 @@
+/**
+ * dsh-skill-manager —— client 半冒烟测试。
+ *
+ * 在 Node 里模拟浏览器环境（window.__ModuleLoader__ + 桩 react），
+ * 验证手写 bundle 能正常加载、apply() 不抛错、字典与设置分区正确注册，
+ * 以及 face 方法经 remote 桩完成往返调用（含错误路径）。
+ *
+ * 运行：node --test test/client.test.js
+ */
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+
+// ── 模拟浏览器环境 ──────────────────────────────────────────────────────
+
+const fakeReact = {
+  useState: () => [undefined, () => {}],
+  useEffect: (fn) => { fn(); }
+};
+
+const loaded = {};
+globalThis.window = {
+  __ModuleLoader__: {
+    load(entry) {
+      loaded.entry = entry;
+      loaded.exports = entry.factory((id) => {
+        if (id === "react") return fakeReact;
+        if (id === "react/jsx-runtime") return { jsx: (...args) => ({ $$jsx: args }), Fragment: "Fragment" };
+        throw new Error("未预期的 require: " + id);
+      });
+    }
+  }
+};
+
+// 触发 client.js 的模块加载
+await import("../lib/client.js");
+const mod = loaded.exports;
+
+// ── 假 cordis ctx ───────────────────────────────────────────────────────
+
+function makeCtx(remoteStub) {
+  const calls = { register: null, bind: null, inject: null, registerSlot: null, mount: null };
+  const ctx = {
+    effect: (fn) => { fn(); },
+    locale: {
+      register: (ns, dicts) => { calls.register = { ns, dicts }; },
+      bind: (ns) => (key) => {
+        calls.bind = { ns, key };
+        return key;
+      }
+    },
+    remote: {
+      $mount: (contribution) => {
+        calls.mount = contribution;
+        return Promise.resolve();
+      }
+    },
+    get: (key) => {
+      if (key === "sessions") return { currentProvideInfo: { getSnapshot: () => ({ sessionId: "s1" }) } };
+      if (key === "remote.skillManager") return remoteStub;
+      return undefined;
+    },
+    slots: {
+      inject: (name, provider) => { calls.inject = { name, provider }; },
+      register: (config, Component) => {
+        calls.registerSlot = { config, Component };
+        return "slot-id";
+      }
+    },
+    calls
+  };
+  return ctx;
+}
+
+// ── 测试 ────────────────────────────────────────────────────────────────
+
+/** 模拟 slot 挂载并取出分区 face（config.inject() 的结果）。 */
+function mountFace(ctx) {
+  ctx.calls.inject.provider();
+  return ctx.calls.registerSlot.config.inject();
+}
+
+describe("client bundle 加载", () => {
+  test("导出 apply / inject / NS", () => {
+    assert.equal(typeof mod.apply, "function");
+    assert.deepEqual(mod.inject, ["slots", "locale", "remote", "sessions"]);
+    assert.equal(mod.NS, "settings.skillManager");
+  });
+
+  test("通过 __ModuleLoader__.load 注册模块", () => {
+    assert.equal(loaded.entry.id, "dsh-skill-manager");
+  });
+});
+
+describe("client apply", () => {
+  test("注册中英文字典", () => {
+    const remoteStub = makeRemoteStub();
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    assert.equal(ctx.calls.register.ns, "settings.skillManager");
+    assert.equal(ctx.calls.register.dicts.zh.nav, "技能管理");
+    assert.equal(ctx.calls.register.dicts.en.nav, "Skill Manager");
+  });
+
+  test("挂载远程贡献清单（3 个描述符）", () => {
+    const ctx = makeCtx(makeRemoteStub());
+    mod.apply(ctx);
+    const descriptors = ctx.calls.mount.descriptors;
+    assert.equal(descriptors.length, 3);
+    assert.deepEqual(
+      descriptors.map((descriptor) => descriptor.method),
+      ["list", "content", "setEnabled"]
+    );
+  });
+
+  test("注册 settings.section 分区（id/order/标签）", () => {
+    const ctx = makeCtx(makeRemoteStub());
+    mod.apply(ctx);
+    assert.equal(ctx.calls.inject.name, "settings.section");
+    // 模拟 slot 挂载：调用注册函数
+    const slotId = ctx.calls.inject.provider();
+    assert.equal(slotId, "slot-id");
+    const config = ctx.calls.registerSlot.config;
+    assert.equal(config.id, "skill-manager");
+    assert.equal(config.order, 17);
+    assert.equal(config.label(), "nav");
+    assert.equal(typeof ctx.calls.registerSlot.Component, "function");
+  });
+
+  test("face.listSkills 经 remote 桩调用并返回结果", async () => {
+    const remoteStub = makeRemoteStub();
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const result = await face.listSkills();
+    assert.equal(remoteStub.listArgs[0], "s1", "应传入当前会话 id");
+    assert.equal(result.skills[0].name, "demo-skill");
+  });
+
+  test("face.setSkillEnabled 传递启用参数", async () => {
+    const remoteStub = makeRemoteStub();
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const result = await face.setSkillEnabled("demo-skill", false);
+    assert.deepEqual(remoteStub.setEnabledArgs, ["demo-skill", "s1", false]);
+    assert.equal(result.enabled, false);
+  });
+
+  test("remote 失败时 face 方法抛出带 code 的错误", async () => {
+    const remoteStub = makeRemoteStub();
+    remoteStub.list = async () => ({ ok: false, error: { code: "E_NOENT", message: "技能不存在" } });
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    await assert.rejects(() => face.listSkills(), /E_NOENT: 技能不存在/);
+  });
+});
+
+function makeRemoteStub() {
+  return {
+    listArgs: null,
+    setEnabledArgs: null,
+    async list(sessionId) {
+      this.listArgs = [sessionId];
+      return { ok: true, value: { skills: [{ name: "demo-skill", description: "演示", enabled: true }] } };
+    },
+    async content() {
+      return { ok: true, value: { name: "demo-skill", content: "# demo" } };
+    },
+    async setEnabled(name, sessionId, enabled) {
+      this.setEnabledArgs = [name, sessionId, enabled];
+      return { ok: true, value: { name, enabled } };
+    }
+  };
+}

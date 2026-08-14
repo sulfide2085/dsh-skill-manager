@@ -1,0 +1,34 @@
+{
+  "name": "dsh-skill-manager",
+  "version": "0.1.0",
+  "description": "DSH 设置页技能管理器：展示全部已加载 skill（含调用策略/来源/状态），支持启用/停用热开关",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-gateway"
+      ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}

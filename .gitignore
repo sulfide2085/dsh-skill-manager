@@ -1,0 +1,12 @@
+# 依赖与本地环境
+node_modules/
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
