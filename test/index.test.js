@@ -10,11 +10,12 @@
  */
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { apply, inject, name } from "../lib/index.js";
 import { buildRoots, collectSkillEntries, DISABLED_SUFFIX, pathExists } from "../lib/skill-files.js";
+import { makeZip } from "./helpers/zip-builder.js";
 
 /** 生成一个合法技能的原始文本。 */
 function skillRaw(name, description, body) {
@@ -175,7 +176,7 @@ describe("插件注册", () => {
     assert.equal(typeof apply, "function");
   });
 
-  test("typert manifest 包含 4 个远程调用", () => {
+  test("typert manifest 包含 10 个远程调用", () => {
     const manifest = ctx.manifest();
     assert.equal(manifest.package, "dsh-skill-manager");
     assert.equal(manifest.face, "host");
@@ -184,7 +185,13 @@ describe("插件注册", () => {
       "dsh-skill-manager#skillManager/list",
       "dsh-skill-manager#skillManager/content",
       "dsh-skill-manager#skillManager/setEnabled",
-      "dsh-skill-manager#skillManager/setSourceEnabled"
+      "dsh-skill-manager#skillManager/setSourceEnabled",
+      "dsh-skill-manager#skillManager/installZip",
+      "dsh-skill-manager#skillManager/listRepos",
+      "dsh-skill-manager#skillManager/addRepo",
+      "dsh-skill-manager#skillManager/removeRepo",
+      "dsh-skill-manager#skillManager/discoverRepo",
+      "dsh-skill-manager#skillManager/installFromRepo"
     ]);
   });
 });
@@ -549,5 +556,86 @@ describe("skillManager.setEnabled", () => {
     const result = await gateway.setEnabled("skill-a", "s1", true);
     assert.deepEqual(result, { name: "skill-a", enabled: true });
     assert.equal(await pathExists(join(tmp, ".dsh", "skills", "skill-a", "SKILL.md")), true);
+  });
+});
+
+describe("skillManager.installZip / 仓库接口", () => {
+  const skillRaw2 = (name, description) =>
+    `---\nname: ${name}\ndescription: ${description}\n---\n\n正文。`;
+
+  test("installZip：安装到用户 .dsh/skills 并出现在 list 中", async () => {
+    const zip = makeZip([
+      { name: "pack/", data: undefined, method: 0, externalAttr: 0x40000000 },
+      { name: "pack/foo/SKILL.md", data: skillRaw2("foo", "ZIP 技能"), method: 8 }
+    ]);
+    const result = await gateway.installZip("pack.zip", zip.toString("base64"));
+    assert.equal(result.installed.length, 1);
+    assert.equal(result.installed[0].name, "foo");
+    assert.equal(result.installed[0].source, "user-dsh");
+    const target = join(homeRoot, ".dsh", "skills", "foo", "SKILL.md");
+    assert.equal(await pathExists(target), true);
+    assert.match(await readFile(target, "utf8"), /name: foo/);
+    // list 中可见且为启用态
+    const { skills } = await gateway.list("s1");
+    const foo = skills.find((skill) => skill.name === "foo");
+    assert.equal(foo.enabled, true);
+    assert.equal(foo.source, "user-dsh");
+  });
+
+  test("installZip：同名冲突跳过", async () => {
+    await mkdir(join(homeRoot, ".dsh", "skills", "foo"), { recursive: true });
+    const zip = makeZip([{ name: "foo/SKILL.md", data: skillRaw2("foo", "d"), method: 8 }]);
+    const result = await gateway.installZip("pack.zip", zip.toString("base64"));
+    assert.equal(result.installed.length, 0);
+    assert.deepEqual(result.conflicts, [{ name: "foo", reason: "conflict" }]);
+  });
+
+  test("installZip：坏数据报错", async () => {
+    await assert.rejects(() => gateway.installZip("x.zip", ""), /缺少 ZIP 数据/);
+    await assert.rejects(
+      () => gateway.installZip("x.zip", Buffer.from("garbage").toString("base64")),
+      /不是有效的 ZIP/
+    );
+  });
+
+  test("addRepo / listRepos / removeRepo：去重与状态文件持久化", async () => {
+    let { repos } = await gateway.listRepos();
+    assert.deepEqual(repos, []);
+
+    await gateway.addRepo("owner-a", "skills-repo", "main");
+    await gateway.addRepo("owner-b", "another", "");
+    // 同名仓库更新分支（不重复添加）
+    await gateway.addRepo("owner-a", "skills-repo", "dev");
+    ({ repos } = await gateway.listRepos());
+    assert.equal(repos.length, 2);
+    const a = repos.find((r) => r.owner === "owner-a");
+    assert.equal(a.branch, "dev");
+
+    // 状态文件真实写入
+    const raw = await readFile(join(homeRoot, ".dsh", "dsh-skill-manager.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    assert.equal(parsed.repos.length, 2);
+    assert.deepEqual([...parsed.enabled].sort(), []);
+
+    await gateway.removeRepo("owner-a", "skills-repo");
+    ({ repos } = await gateway.listRepos());
+    assert.equal(repos.length, 1);
+  });
+
+  test("addRepo：非法仓库坐标拒绝（不写状态）", async () => {
+    await assert.rejects(() => gateway.addRepo("bad/owner", "r", "main"), /INVALID_REPO_REF/);
+    const { repos } = await gateway.listRepos();
+    assert.deepEqual(repos, []);
+  });
+
+  test("discoverRepo / installFromRepo：校验先行（不触发网络）", async () => {
+    await assert.rejects(
+      () => gateway.discoverRepo("bad/owner", "r", "main"),
+      /INVALID_REPO_REF/
+    );
+    await assert.rejects(
+      () => gateway.installFromRepo("owner", "..", "main", "dir"),
+      /INVALID_REPO_REF/
+    );
   });
 });
