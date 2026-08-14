@@ -185,6 +185,16 @@ describe("client apply", () => {
     const face = mountFace(ctx);
     await assert.rejects(() => face.listSkills(), /E_NOENT: 技能不存在/);
   });
+
+  test("回归：启停成功后的 idle 状态不显示为操作失败", () => {
+    // 组件在成功收尾时把操作状态置为 "idle"；渲染逻辑不得把它当作错误字符串展示。
+    // （曾出现"操作失败: idle"的误报：操作实际成功，仅 UI 误判状态。）
+    const failed = "操作失败";
+    assert.equal(mod.opErrorText("idle", failed), "", "idle 是成功状态，不应展示失败文案");
+    assert.equal(mod.opErrorText("busy", failed), "", "busy 进行中不展示文案");
+    assert.equal(mod.opErrorText(undefined, failed), "", "无状态不展示文案");
+    assert.equal(mod.opErrorText("E_NOENT: 技能不存在", failed), "操作失败: E_NOENT: 技能不存在", "真实错误仍按原格式展示");
+  });
 });
 
 function makeRemoteStub() {
