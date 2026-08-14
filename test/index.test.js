@@ -580,6 +580,29 @@ describe("skillManager.installZip / 仓库接口", () => {
     const foo = skills.find((skill) => skill.name === "foo");
     assert.equal(foo.enabled, true);
     assert.equal(foo.source, "user-dsh");
+    // ZIP 安装不产生 GitHub 标注
+    assert.equal(foo.repo, undefined);
+  });
+
+  test("list：状态文件记录 GitHub 安装的技能带 repo 标注，项目同名技能不误标", async () => {
+    // 手工构造状态文件：skill-u 记录为来自 owner-a/repo-x
+    await writeFile(
+      join(homeRoot, ".dsh", "dsh-skill-manager.json"),
+      JSON.stringify({
+        enabled: [],
+        repos: [],
+        installed: { "skill-u": { owner: "owner-a", name: "repo-x", branch: "main" } }
+      })
+    );
+    const { skills } = await gateway.list("s1");
+    const u = skills.find((skill) => skill.name === "skill-u");
+    assert.deepEqual(u.repo, { owner: "owner-a", name: "repo-x", branch: "main" });
+    // 项目级同名技能（source=project-dsh）不被误标
+    await mkdir(join(tmp, ".dsh", "skills", "skill-u"), { recursive: true });
+    await writeFile(join(tmp, ".dsh", "skills", "skill-u", "SKILL.md"), skillRaw("skill-u", "项目同名", "正文"));
+    const { skills: skills2 } = await gateway.list("s1");
+    const projectU = skills2.find((skill) => skill.name === "skill-u" && skill.source === "project-dsh");
+    assert.equal(projectU.repo, undefined);
   });
 
   test("installZip：同名冲突跳过", async () => {

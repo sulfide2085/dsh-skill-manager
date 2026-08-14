@@ -6,7 +6,8 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
 ## 功能
 
 - **全部技能列表**：合并注册表（启用）与磁盘（停用）条目，展示名称、描述、来源、
-  调用策略徽章（模型+用户 / 仅模型 / 仅用户 / 已禁用调用）；
+  调用策略徽章（模型+用户 / 仅模型 / 仅用户 / 已禁用调用）；GitHub 安装的技能
+  在列表中独立成组并带 GitHub 标签（悬停显示仓库坐标），与本地技能明确区分；
 - **第三方技能目录**：自动识别常见 CLI 的技能目录并纳入管理——
   Codex（`~/.codex/skills` 与项目 `.codex/skills`，`CODEX_HOME` 可覆盖）与
   Claude（`~/.claude/skills` 与项目 `.claude/skills`，`CLAUDE_CONFIG_DIR` 可覆盖），
@@ -65,7 +66,7 @@ New-Item -ItemType Junction -Path "node_modules" -Target "C:\Users\<你>\AppData
 npm test
 ```
 
-覆盖范围（`test/`，共 95 个用例）：
+覆盖范围（`test/`，共 96 个用例）：
 
 - `skill-files.test.js`：frontmatter 解析、路径存在性、项目根锚点、管理根构建与去重、
   目录束/平铺/停用扫描、`.system` 跳过、同名胜出规则；
