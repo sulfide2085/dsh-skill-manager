@@ -14,7 +14,8 @@ import assert from "node:assert/strict";
 
 const fakeReact = {
   useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
-  useEffect: (fn) => { fn(); }
+  useEffect: (fn) => { fn(); },
+  useRef: (initial) => ({ current: initial })
 };
 
 const loaded = {};
@@ -155,6 +156,22 @@ describe("client apply", () => {
     assert.equal(typeof face.listRepos, "function");
     assert.equal(typeof face.discoverRepo, "function");
     assert.equal(typeof face.installFromRepo, "function");
+  });
+
+  test("自动搜索开启时静默拉取仓库技能（不展开），渲染不崩溃", async () => {
+    const remoteStub = {
+      list: async () => ({ ok: true, value: { skills: [] } }),
+      listRepos: async () => ({ ok: true, value: { repos: [{ owner: "o", name: "r", branch: "main" }] } }),
+      discoverRepo: async () => ({ ok: true, value: { skills: [
+        { key: "o/r:skills/foo", name: "foo", description: "d", directory: "skills/foo", readmeUrl: "https://github.com/o/r/blob/main/skills/foo/SKILL.md", repoOwner: "o", repoName: "r", repoBranch: "main" }
+      ] } })
+    };
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    const props = { ...face, t: (key) => key, close: () => {} };
+    const jsx = await mod.SkillsSection(props);
+    assert.ok(jsx && typeof jsx === "object", "自动搜索 + 仓库列表渲染不应崩溃");
   });
 
   test("face.installZip 经 remote 桩往返调用（含数据与结果）", async () => {
