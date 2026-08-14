@@ -224,6 +224,49 @@ describe("skillManager.list", () => {
     assert.equal(skills.find((skill) => skill.name === "skill-c").enabled, false);
   });
 
+  test("注册表视图为空时回退到磁盘：启用 + 停用条目都展示，且可预览/启停", async () => {
+    // 用户根放一个已停用的技能，验证回退视图也展示停用条目
+    await mkdir(join(homeRoot, ".dsh", "skills", "skill-d"), { recursive: true });
+    await writeFile(join(homeRoot, ".dsh", "skills", "skill-d", "SKILL.md" + DISABLED_SUFFIX), skillRaw("skill-d", "用户版停用", "正文"));
+
+    // 真实环境中无 scoped 提供方时，ctx.skills 全局视图返回空列表
+    const emptyRegistry = {
+      async list() { return []; },
+      async get() { return undefined; }
+    };
+    const emptyCtx = makeContext({ registry: emptyRegistry, sessions: {}, agents: {} });
+    apply(emptyCtx);
+    const emptyGateway = emptyCtx.provided.get("skillManager");
+
+    const { skills } = await emptyGateway.list(undefined);
+    const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
+    // 用户根启用技能照常展示
+    assert.equal(byName["skill-u"].enabled, true);
+    assert.equal(byName["skill-u"].source, "user-dsh");
+    assert.equal(byName["skill-u"].modelInvocable, true);
+    // 用户根停用技能也展示
+    assert.equal(byName["skill-d"].enabled, false);
+    assert.equal(byName["skill-d"].modelInvocable, false);
+    // 无会话时磁盘扫描只用用户根，项目根不出现在列表里
+    assert.equal(byName["skill-a"], undefined);
+
+    // 回退视图下启用条目可预览磁盘原文
+    const content = await emptyGateway.content("skill-u", undefined);
+    assert.match(content.content, /^---\nname: skill-u/);
+    assert.equal(content.path, join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md"));
+
+    // 回退视图下启用条目可停用（重命名为 *.disabled）
+    const result = await emptyGateway.setEnabled("skill-u", undefined, false);
+    assert.deepEqual(result, { name: "skill-u", enabled: false });
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md")), false);
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md" + DISABLED_SUFFIX)), true);
+
+    // 停用后可恢复
+    const restore = await emptyGateway.setEnabled("skill-u", undefined, true);
+    assert.deepEqual(restore, { name: "skill-u", enabled: true });
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md")), true);
+  });
+
   test("同名技能在注册表中已启用时，磁盘停用条目不重复追加", async () => {
     // 用户根放一个与项目根同名的已停用技能：注册表里已启用，不应重复追加
     await mkdir(join(homeRoot, ".dsh", "skills", "skill-a"), { recursive: true });
