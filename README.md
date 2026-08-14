@@ -63,6 +63,6 @@ npm test
 
 - bundled / runtime 来源的技能不可编辑（无磁盘文件），开关置灰；
 - 停用只隐藏文件（`SKILL.md` → `SKILL.md.disabled`），不删除内容，随时可恢复；
-- 仓库归档带 30 分钟磁盘缓存（`~/.dsh/cache/dsh-skill-manager/`），同仓库多次搜索/安装只下载一次，过期自动重新拉取；
+- 仓库归档带 30 分钟磁盘缓存（`~/.dsh/cache/dsh-skill-manager/`），同仓库多次搜索/安装只下载一次，过期自动重新拉取；下载带**自动重试**（网络瞬时失败退避重试 3 次，404 等确定性错误不重试），错误信息含真实原因；可用环境变量 `DSH_SKILL_GITHUB_BASE` 指定镜像前缀（如 `https://ghproxy.com/https://github.com`，国内网络友好）；
 - 防护预留项（TODO）：zip-bomb 预算、symlink 物化、ZIP64、下载代理支持；
 - 列表按当前会话 cwd 解析项目根，未开会话时显示用户级 + 全局技能。

@@ -106,6 +106,47 @@ test("downloadArchive：超限报 ARCHIVE_TOO_LARGE", async () => {
   }
 });
 
+test("downloadArchive：网络瞬时失败自动重试（连接重置后成功）", async () => {
+  let calls = 0;
+  const zip = makeZip([{ name: "x.txt", data: "hi", method: 0 }]);
+  const server = createServer((_req, res) => {
+    calls += 1;
+    if (calls === 1) {
+      // 模拟瞬时连接重置（GFW/网络抖动常见形态）
+      _req.socket.destroy();
+      return;
+    }
+    res.writeHead(200);
+    res.end(zip);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    const buf = await downloadArchive(base + "/repo.zip");
+    assert.equal(buf.length, zip.length);
+    assert.equal(calls, 2, "第一次失败后应自动重试");
+  } finally {
+    server.close();
+  }
+});
+
+test("downloadArchive：确定性错误（404）不重试", async () => {
+  let calls = 0;
+  const server = createServer((_req, res) => {
+    calls += 1;
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    await assert.rejects(downloadArchive(base + "/nope.zip"), /DOWNLOAD_FAILED/);
+    assert.equal(calls, 1, "404 是确定性失败，不应重试");
+  } finally {
+    server.close();
+  }
+});
+
 test("fetchRepoArchive：归档磁盘缓存——命中不重复下载，过期后重新下载", async () => {
   let hits = 0;
   const zip = makeZip([{ name: "x.txt", data: "hi", method: 0 }]);
