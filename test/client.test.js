@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 // ── 模拟浏览器环境 ──────────────────────────────────────────────────────
 
 const fakeReact = {
-  useState: () => [undefined, () => {}],
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
   useEffect: (fn) => { fn(); }
 };
 
@@ -124,6 +124,29 @@ describe("client apply", () => {
     assert.equal(config.order, 17);
     assert.equal(config.label(), "nav");
     assert.equal(typeof ctx.calls.registerSlot.Component, "function");
+  });
+
+
+  test("组件按真实渲染器契约解构：face 方法作为顶层 props，face 键缺失时不崩溃", async () => {
+    const remoteStub = {
+      list: async () => ({ ok: true, value: { skills: [
+        { name: "demo-skill", description: "演示", source: "user-dsh", enabled: true, modelInvocable: true, userInvocable: true }
+      ] } }),
+      content: async () => ({ ok: true, value: { name: "demo-skill", description: "演示", content: "正文", provider: "filesystem" } }),
+      setEnabled: async () => ({ ok: true, value: { name: "demo-skill", enabled: false } })
+    };
+    const ctx = makeCtx(remoteStub);
+    mod.apply(ctx);
+    const face = mountFace(ctx);
+    // 真实渲染器（dsh-client-web-react renderEntry）把 inject 结果展开为
+    // 顶层 props 传给组件，并不提供名为 face 的键；组件必须按此契约解构
+    const props = { ...face, t: (key) => key, close: () => {} };
+    const jsx = await mod.SkillsSection(props);
+    assert.ok(jsx && typeof jsx === "object", "组件应能正常渲染，不因 face 解构崩溃");
+    // face 上必须提供渲染器展开所需的全部方法
+    assert.equal(typeof face.listSkills, "function");
+    assert.equal(typeof face.loadContent, "function");
+    assert.equal(typeof face.setSkillEnabled, "function");
   });
 
   test("face.listSkills 经 remote 桩调用并返回结果", async () => {
