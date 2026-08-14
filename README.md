@@ -12,8 +12,8 @@ DSH（DeepSeek Harness）的技能管理插件。AI 编程生态的技能散落�
 
 - **跨 Agent 统一管理**：合并 DSH 注册表（启用）+ 磁盘（停用）条目，覆盖 DSH / Codex / Claude（用户级 + 项目级目录自动识别，`CODEX_HOME` / `CLAUDE_CONFIG_DIR` 可覆盖），同名技能按来源各自展示；
 - **热开关启停**：切一下开关即重命名 `SKILL.md` ↔ `SKILL.md.disabled`，filesystem watcher ~200ms 内生效——对 DSH、Codex、Claude 同时有效，无需重启；第三方技能默认停用、显式启用后才进入官方 `/技能` 注册表；
-- **目录级一键启停**：按来源分组（本地 / 项目 / Codex / Claude / GitHub），组头开关一次启停整组；
-- **GitHub 技能市场（发现与安装）**：预置 `anthropics/skills`、`obra/superpowers` 两大知名技能仓库；添加任意仓库（owner/name/分支，默认 main→master 回退）→ 点「发现技能」下载归档扫描出仓库内全部 SKILL.md → 逐个一键安装；安装后技能在列表中独立成「GitHub」组，与本地技能明确区分；
+- **目录级一键启停**：按来源分组（DeepSeek Harness / Agents / 项目 / Codex / Claude），组头开关一次启停整组；
+- **GitHub 技能市场（发现与安装）**：预置 `anthropics/skills`、`obra/superpowers` 两大知名技能仓库；添加任意仓库（owner/name/分支，默认 main→master 回退）→ 点「搜索技能」下载归档扫描出仓库内全部 SKILL.md（可自动搜索、展开/收起结果）→ 逐个一键安装；安装后的技能进入本地列表（DeepSeek Harness 组），卡片带 GitHub 来源标签（悬停显示仓库坐标）；归档带 30 分钟磁盘缓存（`~/.dsh/cache/dsh-skill-manager/`），同仓库多次发现/安装只下载一次；
 - **ZIP 安装**：选一个本地 `.zip`（≤64 MiB），自动解压、发现包内技能（目录束或平铺 `.md`）、查重后装入用户技能目录并立即启用；
 - **搜索与预览**：按名称/描述过滤；点击卡片展开查看技能全文。
 
@@ -63,6 +63,6 @@ npm test
 
 - bundled / runtime 来源的技能不可编辑（无磁盘文件），开关置灰；
 - 停用只隐藏文件（`SKILL.md` → `SKILL.md.disabled`），不删除内容，随时可恢复；
-- 仓库「发现」与「安装」各下载一次归档（与 CC Switch 行为一致）；多技能安装的归档缓存列为后续优化；
+- 仓库归档带 30 分钟磁盘缓存（`~/.dsh/cache/dsh-skill-manager/`），同仓库多次搜索/安装只下载一次，过期自动重新拉取；
 - 防护预留项（TODO）：zip-bomb 预算、symlink 物化、ZIP64、下载代理支持；
 - 列表按当前会话 cwd 解析项目根，未开会话时显示用户级 + 全局技能。

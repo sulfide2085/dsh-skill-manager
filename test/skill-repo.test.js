@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { makeZip } from "./helpers/zip-builder.js";
@@ -101,6 +101,37 @@ test("downloadArchive：超限报 ARCHIVE_TOO_LARGE", async () => {
   try {
     const url = await serverUrl(server);
     await assert.rejects(downloadArchive(url + "/big.zip", { maxBytes: 64 }), /ARCHIVE_TOO_LARGE/);
+  } finally {
+    server.close();
+  }
+});
+
+test("fetchRepoArchive：归档磁盘缓存——命中不重复下载，过期后重新下载", async () => {
+  let hits = 0;
+  const zip = makeZip([{ name: "x.txt", data: "hi", method: 0 }]);
+  const server = createServer((_req, res) => {
+    hits += 1;
+    res.writeHead(200);
+    res.end(zip);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const cacheDir = join(tmpdir(), "dsh-sm-cache-" + Date.now());
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    const r1 = await fetchRepoArchive("o", "r", "main", base, { cacheDir });
+    assert.equal(r1.cached, false);
+    assert.equal(hits, 1);
+    // 命中缓存：不请求服务器
+    const r2 = await fetchRepoArchive("o", "r", "main", base, { cacheDir });
+    assert.equal(r2.cached, true);
+    assert.equal(hits, 1);
+    // 缓存文件真实落盘
+    const files = await readdir(cacheDir);
+    assert.deepEqual(files, ["o__r__main.zip"]);
+    // TTL 过期（负数）→ 重新下载
+    const r3 = await fetchRepoArchive("o", "r", "main", base, { cacheDir, ttlMs: -1 });
+    assert.equal(r3.cached, false);
+    assert.equal(hits, 2);
   } finally {
     server.close();
   }
