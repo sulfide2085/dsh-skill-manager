@@ -1,5 +1,6 @@
 # 依赖与本地环境
-node_modules/
+node_modules
+.research//
 
 # 日志与临时文件
 *.log

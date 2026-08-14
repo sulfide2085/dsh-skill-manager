@@ -8,6 +8,8 @@
 
 DSH（DeepSeek Harness）的技能管理插件。AI 编程生态的技能散落在各处：DSH 自己的技能目录、Codex 的 `~/.codex/skills`、Claude 的 `~/.claude/skills`、GitHub 上成百上千的技能仓库。本插件把这些全部收进**一个设置面板**，谁启用、谁停用、从哪来、装什么新技能，一目了然。
 
+本插件收录于 GitHub [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题（DeepSeek Harness 插件市场），可在 DSH 内用 `dsh plugin` 管理。
+
 ## 功能
 
 - **跨 Agent 统一管理**：合并 DSH 注册表（启用）+ 磁盘（停用）条目，覆盖 DSH / Codex / Claude（用户级 + 项目级目录自动识别，`CODEX_HOME` / `CLAUDE_CONFIG_DIR` 可覆盖），同名技能按来源各自展示；
@@ -15,7 +17,8 @@ DSH（DeepSeek Harness）的技能管理插件。AI 编程生态的技能散落�
 - **目录级一键启停**：按来源分组（DeepSeek Harness / Agents / 项目 / Codex / Claude），组头开关一次启停整组；
 - **GitHub 技能市场（发现与安装）**：预置 `anthropics/skills`、`obra/superpowers` 两大知名技能仓库；添加任意仓库（owner/name/分支，默认 main→master 回退）→ 点「搜索技能」下载归档扫描出仓库内全部 SKILL.md（可自动搜索、展开/收起结果）→ 逐个一键安装；安装后的技能进入本地列表（DeepSeek Harness 组），卡片带 GitHub 来源标签（悬停显示仓库坐标）；归档带 30 分钟磁盘缓存（`~/.dsh/cache/dsh-skill-manager/`），同仓库多次发现/安装只下载一次；
 - **ZIP 安装**：选一个本地 `.zip`（≤64 MiB），自动解压、发现包内技能（目录束或平铺 `.md`）、查重后装入用户技能目录并立即启用；
-- **双搜索框**：本地列表按名称/描述搜索已安装技能；GitHub 市场独立搜索框跨所有已添加仓库搜索技能（自动确保各仓库已搜索，命中即一键安装）；点击卡片展开查看技能全文。
+- **双搜索框**：本地列表按名称/描述搜索已安装技能；GitHub 市场独立搜索框跨所有已添加仓库搜索技能（自动确保各仓库已搜索，命中即一键安装）；点击卡片展开查看技能全文；
+- **安装即刷新**：ZIP / 仓库安装成功后列表自动刷新，列表标题旁另有手动「刷新」按钮——装完立刻可见，无需重开页面。
 
 ## 架构
 
@@ -26,7 +29,7 @@ DSH（DeepSeek Harness）的技能管理插件。AI 编程生态的技能散落�
 | `lib/index.js` | host 半：`skillManager` Typert Remote 服务（list / content / setEnabled / installZip / 仓库接口），注入 `typert`、`skills`、`sessions`、`agents` |
 | `lib/skill-files.js` | 磁盘约定层：扫描根、frontmatter 解析、`.disabled` 启停 |
 | `lib/skill-zip.js` | ZIP 安装核心：解析/解压（store+deflate）、CRC32 校验、条目名安全过滤、包内技能发现、定名/查重/落盘 |
-| `lib/skill-repo.js` | GitHub 仓库发现核心：坐标白名单校验、分支回退下载（128 MiB 上限 + 60s 超时）、包装根剥除、可发现技能扫描、按目录安装 |
+| `lib/skill-repo.js` | GitHub 仓库发现核心：坐标白名单校验、分支回退下载（128 MiB 上限 + 60s 超时 + 瞬时失败自动重试 + 磁盘缓存 + 镜像前缀）、包装根剥除、可发现技能扫描、按目录安装 |
 | `lib/client.js` | 浏览器半：手写 bundle，注册 `settings.section` 分区（id: `skill-manager`，order: 17），含 ZIP 安装与仓库发现面板，经 `ctx.remote` 调 host |
 
 ### 依赖解析说明（Windows）
@@ -48,7 +51,7 @@ dsh plugin --profile web remove dsh-skill-manager   # 卸载
 
 ## 测试
 
-Node 内置 `node:test`（Node ≥ 18），共 **96 个用例**：
+Node 内置 `node:test`（Node ≥ 18），共 **100 个用例**：
 
 ```powershell
 npm test
