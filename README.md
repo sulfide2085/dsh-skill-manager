@@ -11,6 +11,10 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
   Codex（`~/.codex/skills` 与项目 `.codex/skills`，`CODEX_HOME` 可覆盖）与
   Claude（`~/.claude/skills` 与项目 `.claude/skills`，`CLAUDE_CONFIG_DIR` 可覆盖），
   同名技能按目录各自展示、互不遮蔽；
+- **第三方技能默认停用，可接入官方 /技能**：codex/claude 目录的技能**默认全部停用**
+  （只改插件状态、不动文件，Codex/Claude 自身照常使用）；在技能管理页显式启用后，
+  插件向全局技能注册表注册的 provider 会将其纳入，官方 **/技能** 命令与模型侧
+  `skill` 工具即可看到并调用。状态存于 `~/.dsh/dsh-skill-manager.json`；
 - **热开关（单个）**：切换即重命名 `SKILL.md` ↔ `SKILL.md.disabled`，filesystem provider
   的 watcher 在 ~200ms 内感知，模型技能目录立即更新，无需重启；停用后的技能对
   Codex / Claude 同样生效（它们只认 `SKILL.md`）；

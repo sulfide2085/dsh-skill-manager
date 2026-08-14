@@ -50,12 +50,23 @@ function makeRegistry({ roots, extra = [] }) {
     for (const skill of extra) live.push(skill);
     return live;
   };
+  const captured = { provider: undefined, invalidations: 0 };
   return {
+    captured,
+    roots,
     async list({ cwd } = {}) {
       return scanLive(cwd);
     },
     async get(skillName, { cwd } = {}) {
       return (await scanLive(cwd)).find((skill) => skill.name === skillName);
+    },
+    registerProvider(create) {
+      const control = {
+        signal: new AbortController().signal,
+        invalidate: () => { captured.invalidations += 1; }
+      };
+      captured.provider = create(control);
+      return () => {};
     }
   };
 }
@@ -212,8 +223,9 @@ describe("skillManager.list", () => {
   });
 
   test("会话使用 agentPresets 提供的 scoped 注册表", async () => {
+    // 真实 scoped 注册表 = 全局提供方 + 预设层，官方根技能也会列出
     const scopedRegistry = makeRegistry({
-      roots: [],
+      roots: registry.roots,
       extra: [{ name: "scoped-only", description: "预设隔离技能", provider: "filesystem", source: "project-agents", invocation: { modelInvocable: true, userInvocable: true }, content: "x", path: "/x/SKILL.md" }]
     });
     const scopedCtx = makeContext({
@@ -227,8 +239,8 @@ describe("skillManager.list", () => {
 
     const { skills } = await scopedGateway.list("s2");
     const names = skills.map((skill) => skill.name).sort();
-    // live 列表来自 scoped 注册表；磁盘停用列表仍按会话 cwd 扫描
-    assert.deepEqual(names, ["scoped-only", "skill-c"]);
+    // live 列表来自 scoped 注册表（官方根启用条目在其中）；磁盘只补充停用条目
+    assert.deepEqual(names, ["scoped-only", "skill-a", "skill-c", "skill-u"]);
     assert.equal(skills.find((skill) => skill.name === "scoped-only").enabled, true);
     assert.equal(skills.find((skill) => skill.name === "scoped-only").source, "project-agents");
     assert.equal(skills.find((skill) => skill.name === "skill-c").enabled, false);
@@ -242,7 +254,8 @@ describe("skillManager.list", () => {
     // 真实环境中无 scoped 提供方时，ctx.skills 全局视图返回空列表
     const emptyRegistry = {
       async list() { return []; },
-      async get() { return undefined; }
+      async get() { return undefined; },
+      registerProvider() { return () => {}; }
     };
     const emptyCtx = makeContext({ registry: emptyRegistry, sessions: {}, agents: {} });
     apply(emptyCtx);
@@ -302,9 +315,13 @@ describe("第三方技能目录（codex / claude）", () => {
     const { skills } = await gateway.list("s1");
     const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
     assert.equal(byName["cx-a"].source, "codex-user");
-    assert.equal(byName["cx-a"].enabled, true);
+    assert.equal(byName["cx-a"].enabled, false, "第三方技能默认停用");
     assert.equal(byName["cl-a"].source, "claude-user");
-    assert.equal(byName["cl-a"].enabled, true);
+    assert.equal(byName["cl-a"].enabled, false, "第三方技能默认停用");
+    // 显式启用后生效
+    await gateway.setEnabled("cx-a", "s1", true, "codex-user");
+    const after = (await gateway.list("s1")).skills.find((skill) => skill.name === "cx-a");
+    assert.equal(after.enabled, true);
   });
 
   test("项目级 .codex/skills 与 .claude/skills 也识别", async () => {
@@ -317,49 +334,64 @@ describe("第三方技能目录（codex / claude）", () => {
     const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
     assert.equal(byName["cx-p"].source, "codex-project");
     assert.equal(byName["cl-p"].source, "claude-project");
-    assert.equal(byName["cx-p"].enabled, true);
+    assert.equal(byName["cx-p"].enabled, false, "第三方技能默认停用");
   });
 
-  test("目录级一键停用/启用（setSourceEnabled）", async () => {
+  test("目录级一键停用/启用（官方根 = 重命名文件）", async () => {
+    // user-dsh 放两个启用技能用于目录级重命名测试
+    await mkdir(join(homeRoot, ".dsh", "skills", "skill-u2"), { recursive: true });
+    await writeFile(join(homeRoot, ".dsh", "skills", "skill-u2", "SKILL.md"), skillRaw("skill-u2", "用户技能 2", "正文"));
+
+    const off = await gateway.setSourceEnabled("user-dsh", "s1", false);
+    assert.deepEqual(off, { source: "user-dsh", enabled: false, toggled: 2 });
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md")), false);
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md.disabled")), true);
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u2", "SKILL.md.disabled")), true);
+
+    const again = await gateway.setSourceEnabled("user-dsh", "s1", false);
+    assert.deepEqual(again, { source: "user-dsh", enabled: false, toggled: 0 });
+
+    const on = await gateway.setSourceEnabled("user-dsh", "s1", true);
+    assert.deepEqual(on, { source: "user-dsh", enabled: true, toggled: 2 });
+    assert.equal(await pathExists(join(homeRoot, ".dsh", "skills", "skill-u", "SKILL.md")), true);
+  });
+
+  test("目录级一键停用/启用（第三方目录 = 插件状态，不碰文件）", async () => {
     const codexRoot = join(homeRoot, "codex", "skills");
     await mkdir(join(codexRoot, "cx-a"), { recursive: true });
     await writeFile(join(codexRoot, "cx-a", "SKILL.md"), skillRaw("cx-a", "Codex A", "正文"));
     await mkdir(join(codexRoot, "cx-b"), { recursive: true });
     await writeFile(join(codexRoot, "cx-b", "SKILL.md"), skillRaw("cx-b", "Codex B", "正文"));
-    // 已停用的不参与本次变更
-    await mkdir(join(codexRoot, "cx-c"), { recursive: true });
-    await writeFile(join(codexRoot, "cx-c", "SKILL.md" + DISABLED_SUFFIX), skillRaw("cx-c", "Codex C", "正文"));
 
-    // 一键停用：两个启用条目被改名，已停用的跳过
-    const off = await gateway.setSourceEnabled("codex-user", "s1", false);
-    assert.deepEqual(off, { source: "codex-user", enabled: false, toggled: 2 });
-    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md")), false);
-    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md.disabled")), true);
-    assert.equal(await pathExists(join(codexRoot, "cx-b", "SKILL.md.disabled")), true);
-    assert.equal(await pathExists(join(codexRoot, "cx-c", "SKILL.md.disabled")), true, "已停用的保持原状");
-
-    // list 立即反映：全部停用
+    // 默认停用：文件原封不动，列表显示停用
     let { skills } = await gateway.list("s1");
     assert.deepEqual(
       skills.filter((skill) => skill.source === "codex-user").map((skill) => skill.enabled),
-      [false, false, false]
+      [false, false]
     );
+    assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md")), true, "文件不应被改名");
 
-    // 幂等：再停一次 → toggled 0
-    const again = await gateway.setSourceEnabled("codex-user", "s1", false);
-    assert.deepEqual(again, { source: "codex-user", enabled: false, toggled: 0 });
-
-    // 一键启用：三个全部恢复
+    // 一键启用：状态写入，文件仍不动
     const on = await gateway.setSourceEnabled("codex-user", "s1", true);
-    assert.deepEqual(on, { source: "codex-user", enabled: true, toggled: 3 });
+    assert.deepEqual(on, { source: "codex-user", enabled: true, toggled: 2 });
     assert.equal(await pathExists(join(codexRoot, "cx-a", "SKILL.md")), true);
-    assert.equal(await pathExists(join(codexRoot, "cx-b", "SKILL.md")), true);
-    assert.equal(await pathExists(join(codexRoot, "cx-c", "SKILL.md")), true);
-
     ({ skills } = await gateway.list("s1"));
     assert.deepEqual(
       skills.filter((skill) => skill.source === "codex-user").map((skill) => skill.enabled),
-      [true, true, true]
+      [true, true]
+    );
+
+    // 幂等
+    const again = await gateway.setSourceEnabled("codex-user", "s1", true);
+    assert.deepEqual(again, { source: "codex-user", enabled: true, toggled: 0 });
+
+    // 一键停用
+    const off = await gateway.setSourceEnabled("codex-user", "s1", false);
+    assert.deepEqual(off, { source: "codex-user", enabled: false, toggled: 2 });
+    ({ skills } = await gateway.list("s1"));
+    assert.deepEqual(
+      skills.filter((skill) => skill.source === "codex-user").map((skill) => skill.enabled),
+      [false, false]
     );
   });
 
@@ -390,17 +422,47 @@ describe("第三方技能目录（codex / claude）", () => {
     const matches = skills.filter((skill) => skill.name === "agents-sdk");
     assert.equal(matches.length, 2);
     assert.deepEqual(matches.map((skill) => skill.source).sort(), ["claude-user", "codex-user"]);
+    // 默认全部停用
+    assert.deepEqual(matches.map((skill) => skill.enabled), [false, false]);
 
-    // 带 source 启停：只影响指定目录的文件
-    await gateway.setEnabled("agents-sdk", "s1", false, "claude-user");
-    assert.equal(await pathExists(join(claudeRoot, "agents-sdk", "SKILL.md")), false);
-    assert.equal(await pathExists(join(claudeRoot, "agents-sdk", "SKILL.md.disabled")), true);
-    assert.equal(await pathExists(join(codexRoot, "agents-sdk", "SKILL.md")), true, "codex 的不受影响");
+    // 带 source 启停：只影响指定目录的状态，文件不被动
+    await gateway.setEnabled("agents-sdk", "s1", true, "claude-user");
+    assert.equal(await pathExists(join(claudeRoot, "agents-sdk", "SKILL.md")), true, "文件不应被改名");
+    assert.equal(await pathExists(join(codexRoot, "agents-sdk", "SKILL.md")), true);
 
-    // list 反映：claude 停用、codex 仍启用
     const after = (await gateway.list("s1")).skills.filter((skill) => skill.name === "agents-sdk");
-    assert.equal(after.find((skill) => skill.source === "claude-user").enabled, false);
-    assert.equal(after.find((skill) => skill.source === "codex-user").enabled, true);
+    assert.equal(after.find((skill) => skill.source === "claude-user").enabled, true);
+    assert.equal(after.find((skill) => skill.source === "codex-user").enabled, false);
+  });
+
+  test("第三方技能默认停用；显式启用后进入官方注册表（provider）", async () => {
+    const codexRoot = join(homeRoot, "codex", "skills");
+    await mkdir(join(codexRoot, "cx-a"), { recursive: true });
+    await writeFile(join(codexRoot, "cx-a", "SKILL.md"), skillRaw("cx-a", "Codex A", "正文"));
+
+    const provider = registry.captured.provider;
+    assert.ok(provider, "apply 应注册第三方提供方");
+    assert.equal(provider.name, "external-cli");
+
+    // 默认停用：provider 目录为空
+    let observation = await provider.list({});
+    assert.deepEqual(observation.candidates, []);
+
+    // 显式启用后：provider 目录出现该技能，且可加载正文
+    await gateway.setEnabled("cx-a", "s1", true, "codex-user");
+    observation = await provider.list({});
+    assert.equal(observation.candidates.length, 1);
+    assert.equal(observation.candidates[0].name, "cx-a");
+    assert.equal(observation.candidates[0].source, "codex-user");
+    const definition = await provider.get(observation.candidates[0]);
+    assert.match(definition.content, /^---\nname: cx-a/);
+    assert.equal(definition.content.includes("Codex A"), true);
+    assert.equal(registry.captured.invalidations >= 1, true, "状态变更应触发注册表失效");
+
+    // 停用后从官方注册表消失
+    await gateway.setEnabled("cx-a", "s1", false, "codex-user");
+    observation = await provider.list({});
+    assert.deepEqual(observation.candidates, []);
   });
 });
 
