@@ -29,7 +29,8 @@ DSH（DeepSeek Harness）技能管理插件：在 Web 设置的侧边栏新增�
 - **GitHub 仓库发现**：添加/收藏仓库（owner/name/分支，分支默认 main→master
   回退，坐标经字符白名单校验），下载归档（流式、128 MiB 上限、60s 超时）
   后扫描仓库内技能（剥 GitHub 包装根目录），列表展示可安装技能并一键安装；
-  安装成功自动收藏仓库。
+  安装成功自动收藏仓库。首次运行预置两个知名技能仓库：`anthropics/skills`
+  与 `obra/superpowers`（状态文件缺失 repos 键时注入，用户删光后保持为空）。
 
 ## 架构
 
@@ -64,7 +65,7 @@ New-Item -ItemType Junction -Path "node_modules" -Target "C:\Users\<你>\AppData
 npm test
 ```
 
-覆盖范围（`test/`，共 93 个用例）：
+覆盖范围（`test/`，共 95 个用例）：
 
 - `skill-files.test.js`：frontmatter 解析、路径存在性、项目根锚点、管理根构建与去重、
   目录束/平铺/停用扫描、`.system` 跳过、同名胜出规则；

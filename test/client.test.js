@@ -99,6 +99,8 @@ describe("client apply", () => {
     assert.equal(ctx.calls.register.ns, "settings.skillManager");
     assert.equal(ctx.calls.register.dicts.zh.nav, "技能管理");
     assert.equal(ctx.calls.register.dicts.en.nav, "Skill Manager");
+    assert.equal(ctx.calls.register.dicts.zh.disabled, "已停用");
+    assert.equal(ctx.calls.register.dicts.en.disabled, "Disabled");
   });
 
   test("挂载远程贡献清单（10 个描述符）", () => {

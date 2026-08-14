@@ -598,34 +598,53 @@ describe("skillManager.installZip / 仓库接口", () => {
     );
   });
 
-  test("addRepo / listRepos / removeRepo：去重与状态文件持久化", async () => {
+  test("首次运行注入预设仓库（anthropics/skills、obra/superpowers）并落盘", async () => {
     let { repos } = await gateway.listRepos();
-    assert.deepEqual(repos, []);
+    assert.deepEqual(repos, [
+      { owner: "anthropics", name: "skills", branch: "main" },
+      { owner: "obra", name: "superpowers", branch: "main" }
+    ]);
+    const raw = await readFile(join(homeRoot, ".dsh", "dsh-skill-manager.json"), "utf8");
+    assert.equal(JSON.parse(raw).repos.length, 2);
+  });
 
+  test("addRepo / listRepos / removeRepo：去重与状态文件持久化", async () => {
     await gateway.addRepo("owner-a", "skills-repo", "main");
     await gateway.addRepo("owner-b", "another", "");
     // 同名仓库更新分支（不重复添加）
     await gateway.addRepo("owner-a", "skills-repo", "dev");
-    ({ repos } = await gateway.listRepos());
-    assert.equal(repos.length, 2);
+    let { repos } = await gateway.listRepos();
+    assert.equal(repos.length, 4); // 2 预设 + 2 新增
     const a = repos.find((r) => r.owner === "owner-a");
     assert.equal(a.branch, "dev");
 
     // 状态文件真实写入
     const raw = await readFile(join(homeRoot, ".dsh", "dsh-skill-manager.json"), "utf8");
     const parsed = JSON.parse(raw);
-    assert.equal(parsed.repos.length, 2);
+    assert.equal(parsed.repos.length, 4);
     assert.deepEqual([...parsed.enabled].sort(), []);
 
     await gateway.removeRepo("owner-a", "skills-repo");
     ({ repos } = await gateway.listRepos());
-    assert.equal(repos.length, 1);
+    assert.equal(repos.length, 3);
   });
 
-  test("addRepo：非法仓库坐标拒绝（不写状态）", async () => {
+  test("预设仓库删光后保持为空（不复活）", async () => {
+    await gateway.removeRepo("anthropics", "skills");
+    await gateway.removeRepo("obra", "superpowers");
+    let { repos } = await gateway.listRepos();
+    assert.deepEqual(repos, []);
+    // 重新读状态（模拟重启）仍然是空
+    ({ repos } = await gateway.listRepos());
+    assert.deepEqual(repos, []);
+    const raw = await readFile(join(homeRoot, ".dsh", "dsh-skill-manager.json"), "utf8");
+    assert.deepEqual(JSON.parse(raw).repos, []);
+  });
+
+  test("addRepo：非法仓库坐标拒绝（状态不变）", async () => {
     await assert.rejects(() => gateway.addRepo("bad/owner", "r", "main"), /INVALID_REPO_REF/);
     const { repos } = await gateway.listRepos();
-    assert.deepEqual(repos, []);
+    assert.equal(repos.length, 2); // 仍只有预设仓库
   });
 
   test("discoverRepo / installFromRepo：校验先行（不触发网络）", async () => {
