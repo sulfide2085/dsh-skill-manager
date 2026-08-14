@@ -4,7 +4,7 @@
 
 > One panel to manage every skill across DSH, Codex and Claude — hot-toggle, discover & install from GitHub skill marketplaces, or import from a local ZIP, all live without restart.
 
-![GitHub skill marketplace](docs/screenshots/skill-market.png)
+![DSH skill manager preview](docs/screenshots/social-preview.jpg)
 
 ## What is this
 
@@ -20,6 +20,8 @@ Featured in the GitHub [`dsh-plugin`](https://github.com/topics/dsh-plugin) topi
 - **ZIP install**: pick a local `.zip` (≤64 MiB); it is extracted, skills inside are discovered automatically (SKILL.md bundles or flat `.md`), deduplicated, installed into `~/.dsh/skills` and enabled; an archive without skills is rejected with an error.
 - **GitHub skill search**: add a repository (owner / name / branch; branch is optional and falls back to main→master), then search skills across all added repositories by keyword and install them individually; a separate search box filters locally installed skills.
 - **Refresh after install**: the list refreshes automatically after ZIP / repo installs, with a manual refresh button next to the title; click a card to expand the full skill content.
+
+![Skill manager UI](docs/screenshots/skill-manager.png)
 
 ## File layout
 
